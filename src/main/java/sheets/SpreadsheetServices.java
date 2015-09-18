@@ -100,7 +100,8 @@ public class SpreadsheetServices {
             List<SpreadsheetEntry> spreadsheets = feed.getEntries();
 
             if (spreadsheets.size() == 0) {
-                // TODO: There were no spreadsheets, act accordingly.
+                RSIPledgeWatcher.logger.log(Level.SEVERE, "There were no spreadsheets with that name");
+                throw new NoSuchElementException();
             }
 
             // Get the appropriate spreadsheet to edit.

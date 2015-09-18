@@ -39,9 +39,6 @@ public class RSIPledgeWatcher {
     public static void main(String[] args) throws IOException, InterruptedException, ServiceException {
         // Get how long (in minutes) to check.
         String s = System.getProperty("pollTime");
-        // Set this boolean to be true if Y, false otherwise.
-//        reportOnlyIfChanged = System.getProperty("reportIfChanged").equals("Y") ? true : false;
-
         String localSheetName = System.getProperty("sheetName");
         sheetName = localSheetName != null ? localSheetName : sheetName;
 
@@ -49,6 +46,7 @@ public class RSIPledgeWatcher {
         String localWorkSheetName = System.getProperty("workSheetName");
         workSheetName = localWorkSheetName != null ? localWorkSheetName : workSheetName;
 
+        // The insertion type
         type = InsertionType.valueOf(System.getProperty("type"));
 
         // Init logger after the type has been set.
@@ -74,10 +72,9 @@ public class RSIPledgeWatcher {
             Date date = new Date();
             // Output the results.
             RSIPledgeWatcher.logger.info("Amount funded $" + NumberFormat.getNumberInstance(Locale.US).format(parsedData[0] / 100.00));
-
-            // TODO: Do something with the result.. maybe add a row to their spreadsheet or something.
+            // Actually update the results
             updateSheet(parsedData[0] / 100.00, date, parsedData[1], parsedData[2], type);
-
+            // Sleep the main thread until it is time to kick it up again :D
             Thread.sleep(timeInMinutes * 1000 * 60);
         }
     }
@@ -91,8 +88,6 @@ public class RSIPledgeWatcher {
     private static Long[] getFundsFromJson(String json) {
         // Create the JSON Object
         JSONObject jsonObject = new JSONObject(json).getJSONObject("data");
-        // Extract and return the funds value for now.
-
         // 0: Funds, 1: Citizens, 2: Fleet
         Long[] returnValues = {jsonObject.getLong("funds"), jsonObject.getLong("fans"), jsonObject.getLong("fleet")};
         // Return the array.
@@ -101,9 +96,11 @@ public class RSIPledgeWatcher {
 
     /**
      * This just calls the actual updating method.
-     * @param data
-     * @param date
-     * @param type
+     * @param data the funds
+     * @param citizens the citizens
+     * @param fleet the fleet
+     * @param date the date
+     * @param type the insertion enum type.
      * @throws ServiceException
      * @throws IOException
      */
@@ -125,33 +122,29 @@ public class RSIPledgeWatcher {
             URL url = new URL(targetURL);
             connection = (HttpURLConnection)url.openConnection();
             connection.setRequestMethod("POST");
-            connection.setRequestProperty("Content-Type",
-                    "application/x-www-form-urlencoded");
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             connection.setRequestProperty("Origin", "https://robertsspaceindustries.com");
-
-            connection.setRequestProperty("Content-Length",
-                    Integer.toString(urlParameters.getBytes().length));
+            connection.setRequestProperty("Content-Length", Integer.toString(urlParameters.getBytes().length));
             connection.setRequestProperty("Content-Language", "en-US");
 
             connection.setUseCaches(false);
             connection.setDoOutput(true);
 
             //Send request
-            DataOutputStream wr = new DataOutputStream (
-                    connection.getOutputStream());
+            DataOutputStream wr = new DataOutputStream (connection.getOutputStream());
             wr.writeBytes(urlParameters);
             wr.close();
 
             //Get Response
-            InputStream is = connection.getInputStream();
-            BufferedReader rd = new BufferedReader(new InputStreamReader(is));
+            InputStream inputStream = connection.getInputStream();
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
             StringBuilder response = new StringBuilder(); // or StringBuffer if not Java 5+
             String line;
-            while((line = rd.readLine()) != null) {
+            while((line = bufferedReader.readLine()) != null) {
                 response.append(line);
                 response.append('\r');
             }
-            rd.close();
+            bufferedReader.close();
             return response.toString();
         } catch (Exception e) {
             e.printStackTrace();
