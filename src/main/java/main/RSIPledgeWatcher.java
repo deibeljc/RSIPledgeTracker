@@ -3,15 +3,26 @@ package main;
 import com.google.gdata.util.ServiceException;
 import enums.InsertionType;
 import logging.Logging;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.protocol.HTTP;
 import org.json.JSONObject;
 import sheets.SpreadsheetServices;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.text.DateFormat;
 import java.text.NumberFormat;
-import java.util.Date;
-import java.util.Locale;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -21,6 +32,7 @@ import java.util.logging.Logger;
 public class RSIPledgeWatcher {
 
     private static int timeInMinutes;
+    private static int modifier;
     private static boolean reportOnlyIfChanged = false;
     private static Long[] parsedData;
     private static Long previousFundAmount;
@@ -41,7 +53,6 @@ public class RSIPledgeWatcher {
         String s = System.getProperty("pollTime");
         String localSheetName = System.getProperty("sheetName");
         sheetName = localSheetName != null ? localSheetName : sheetName;
-
         // This will set what worksheet to use within the spreadsheet
         String localWorkSheetName = System.getProperty("workSheetName");
         workSheetName = localWorkSheetName != null ? localWorkSheetName : workSheetName;
@@ -72,10 +83,21 @@ public class RSIPledgeWatcher {
             Date date = new Date();
             // Output the results.
             RSIPledgeWatcher.logger.info("Amount funded $" + NumberFormat.getNumberInstance(Locale.US).format(parsedData[0] / 100.00));
-            // Actually update the results
-            updateSheet(parsedData[0] / 100.00, date, parsedData[1], parsedData[2], type);
+            if (type == InsertionType.DATABASE) {
+                // Update the mongo database
+                updateMongo(parsedData[0] / 100.00, date, parsedData[1], parsedData[2]);
+            } else {
+                // Update the spreadsheets
+                updateSheet(parsedData[0] / 100.00, date, parsedData[1], parsedData[2], type);
+            }
+
+            if (type == InsertionType.DATABASE) {
+                modifier = 1000;
+            } else {
+                modifier = 1000 * 60;
+            }
             // Sleep the main thread until it is time to kick it up again :D
-            Thread.sleep(timeInMinutes * 1000 * 60);
+            Thread.sleep(timeInMinutes * modifier);
         }
     }
 
@@ -154,5 +176,38 @@ public class RSIPledgeWatcher {
                 connection.disconnect();
             }
         }
+    }
+
+
+    /**
+     *
+     * @param funds
+     * @param date
+     * @param citizens
+     * @param fleet
+     */
+    private static void updateMongo(Double funds, Date date, Long citizens, Long fleet) throws IOException {
+        // Date formatting
+        DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+        // Convert it to the right time.
+        TimeZone zone = new SimpleTimeZone((int) TimeUnit.HOURS.toMillis(1), "GMT+1");
+        dateFormat.setTimeZone(zone);
+
+        DefaultHttpClient httpclient = new DefaultHttpClient();
+
+        HttpPost httpost = new HttpPost("http://localhost:8080/api/pledge");
+
+        List <NameValuePair> nvps = new ArrayList <NameValuePair>();
+        nvps.add(new BasicNameValuePair("date", dateFormat.format(date)));
+        nvps.add(new BasicNameValuePair("funds", funds.toString()));
+        nvps.add(new BasicNameValuePair("citizens", citizens.toString()));
+        nvps.add(new BasicNameValuePair("fleet", fleet.toString()));
+
+        httpost.setEntity(new UrlEncodedFormEntity(nvps, HTTP.UTF_8));
+        // Create the response.
+        HttpResponse response = httpclient.execute(httpost);
+        HttpEntity entity = response.getEntity();
+
+        logger.log(Level.INFO, "Entered database record.");
     }
 }
